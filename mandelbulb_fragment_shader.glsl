@@ -11,6 +11,12 @@ uniform float width;
 uniform float height;
 uniform float scale;
 
+/*
+Credits for this shader code go to EvilRyu
+https://www.shadertoy.com/view/MdXSWn
+*/
+
+
 float stime, ctime;
 float pixel_size = 0.0;
 
@@ -39,7 +45,7 @@ vec3 mb(vec3 p) {
 	float dr = 1.0;
 
 	float t0 = 1.0;
-	for(int i = 0; i < 4; ++i) {  // higher value = more details
+	for(int i = 0; i < 7; ++i) {  // higher value = more details
 		r = length(z);
 		if(r > 2.0) continue;
 		theta = atan(z.y / z.x);
@@ -98,7 +104,7 @@ vec3 intersect( in vec3 ro, in vec3 rd )
     float step = 0.0;
     float error = 1000.0;
 
-    for( int i=0; i<32; i++ )
+    for( int i=0; i<32; i++ )  // higher values = better ray casting resolution
     {
         if( error < pixel_size*0.5 || t > 20.0 )
         {
@@ -190,7 +196,7 @@ vec3 intersect( in vec3 ro, in vec3 rd )
  		   col=mix(col,bg, 1.0-exp(-0.001*res.x*res.x));
     }
 
-    // post
+    // post processing
     col=pow(clamp(col,0.0,1.0),vec3(0.45));
 //    col=col*0.6+0.4*col*col*(3.0-2.0*col);  // contrast
 //    col=mix(col, vec3(dot(col, vec3(0.33))), -0.5);  // satuation

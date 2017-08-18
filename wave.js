@@ -4,13 +4,18 @@ function GPGPU(size) {
     // The size must be a power of 2 and the textures must be square
     var width  = Math.sqrt(size / 4);
     var height = width;
-    var _scale = 0.0001;
 
     // textures for input and output data
     var dataTexture   = null;
-    var outputTexture = null;
+
+    // We need 2 output textures to swap buffers
+    var outputTexture1 = null;
+    var outputTexture2 = null;
+    var outputTextures = [];
     // framebuffer to render in
     var frameBuffer = null;
+
+    var tick = 0;
 
     // create canvas, but don’t attach it to an element
     var canvas = document.createElement('canvas');
@@ -81,12 +86,7 @@ function GPGPU(size) {
     gl.enableVertexAttribArray(positionAttributeHandle);
     gl.enableVertexAttribArray(textureAttributeHandle);
 
-
-    // set handles for other params
-    var widthHandle = gl.getUniformLocation(program, "width");
-    var heightHandle = gl.getUniformLocation(program, "height");
-    var scaleHandle = gl.getUniformLocation(program, "scale");
-
+    var tickHandle = gl.getUniformLocation(program, "tick");
 
     // Tell the attribute how to get data out of the geometry buffer (ARRAY_BUFFER)
     gl.vertexAttribPointer(positionAttributeHandle,
@@ -108,14 +108,12 @@ function GPGPU(size) {
     // set viewport to cover our problem space
     gl.viewport(0, 0, width, height);
 
-    // Not rendering to a texture this time, so no buffer here
-    //// create an outputTexture to hold results: same code as previous page, with null as data
-    //outputTexture = createTexture(null);
-    //// this also unbinds TEXTURE0, which will hold the input Data
-    //
-    //// Attach the texture to frameBuffer
-    //attachFrameBuffer(outputTexture);
-    var status = frameBufferIsComplete();
+    // create an outputTexture to hold results: same code as previous page, with null as data
+    outputTexture1 = createTexture(null);
+    outputTexture2 = createTexture(null);
+    // this also unbinds TEXTURE0, which will hold the input Data
+
+    outputTextures = [outputTexture1, outputTexture2];
 
 
     function createTexture(data) {
@@ -177,9 +175,6 @@ function GPGPU(size) {
         return {isComplete: value, message: message};
     }
 
-    function scale(scale) {
-        _scale = scale;
-    }
 
     function setData(data) {
         // Create the input data texture
@@ -197,7 +192,12 @@ function GPGPU(size) {
 
     function compute() {
 
+        // Attach the texture to frameBuffer, swapping at each tick
+        tick++;
+        gl.uniform1f(tickHandle, tick);
+        attachFrameBuffer(outputTextures[tick % 2]);
         var status = frameBufferIsComplete();
+
         // Run the calculation, that is, render the square
         if (status.isComplete) {
             // draw the ‘square’ model
@@ -208,21 +208,8 @@ function GPGPU(size) {
             );
         }
         else {
-            console.log(status.message);
+          console.log(status.message);
         }
-    }
-
-    function loop() {
-
-        // set uniforms for all force laoyout parameters
-        gl.uniform1f(widthHandle, width); //0.5
-        gl.uniform1f(heightHandle, height); //0.1
-        gl.uniform1f(scaleHandle, _scale); //0.005
-
-        compute();
-        setTimeout(function() {
-            requestAnimationFrame( loop );
-        }, 1000 / 30 );
     }
 
     function attachFrameBuffer(texture) {
@@ -241,28 +228,14 @@ function GPGPU(size) {
         return frameBuffer;
     }
 
-    function attachCanvas(element_id) {
-        document.getElementById(element_id).appendChild(canvas);
-        canvas.setAttribute("width", width);
-        canvas.setAttribute("height", height);
-        // hook scroll to scale
-        canvas.onmousewheel = function onScroll(e) {
-            e.stopPropagation();
-            e.preventDefault();
-            _scale = Math.max(0.0001, _scale += e.deltaY / 1000);
-            console.log(_scale);
-        };
-    }
-
     // Get the output data
     function readData() {
-        console.log("read buffer");
         // Create an output buffer object to store read data
         var buffer = new Float32Array(4 * width * height);
 
         // bind the outputTexture to TEXTURE0
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, outputTexture);
+        gl.bindTexture(gl.TEXTURE_2D, outputTextures[tick % 2]);
 
         // Read texture data into the buffer
         gl.readPixels(
@@ -280,9 +253,7 @@ function GPGPU(size) {
     return {
         setData: setData,
         compute: compute,
-        readData: readData,
-        loop: loop,
-        attachCanvas: attachCanvas
+        readData: readData
     }
 }
 
@@ -293,12 +264,54 @@ var timeDiff = {
     }
 };
 
-var nb_loops = 200000;
-
 // 4096 for size gives us a texture that is 32 x 32 (with 4 floats per point)
 // 67,108,864 is 4096 x 4096 x 4
-var size = 800 * 800 * 4;
+var nb_dots_x = 64;
+var nb_dots_y = nb_dots_x;
+var size = nb_dots_x * nb_dots_y * 4;
+
+var inputData = new Float32Array(size);
+for (var i = 0; i < nb_dots_x; i++) {
+  for (var j = 0; j < nb_dots_y; j++) {
+    inputData[4 * (i * nb_dots_y + j) + 0] = (i - (nb_dots_x / 2)) / nb_dots_x ;   // R value = X coord [-1.0 1.0]
+    inputData[4 * (i * nb_dots_y + j) + 1] = (j - (nb_dots_y / 2)) / nb_dots_y;   // G value = Y coord [-1.0 1.0]
+    inputData[4 * (i * nb_dots_y + j) + 2] = 0.0;   // B value = nothing
+    inputData[4 * (i * nb_dots_y + j) + 3] = 0.0;   // A value = nothing
+  }
+}
+
+var width = 512;
+var height = 512;
 
 var gpgpu = new GPGPU(size);
-var canvas = gpgpu.attachCanvas("gl-canvas");
-gpgpu.loop();
+var canvas = document.getElementById("canvas");
+canvas.setAttribute("width", width);
+canvas.setAttribute("height", height);
+var ctx = canvas.getContext('2d');
+
+gpgpu.setData(inputData);
+
+function renderDots(results) {
+    ctx.clearRect(0, 0, width, height);
+    for (var i = 0; i < results.length; i +=4) {
+        var x = width / 2 + ((width / 2) * results[i]);
+        var y = height / 2 + ((height / 2) * results[i + 1]);
+        var r = 1.0;
+
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, 2 * Math.PI);
+        ctx.fillStyle = "rgba(128, 150, 200, 1.0)";
+        ctx.fill();
+    }
+}
+
+function loop() {
+    gpgpu.compute();
+    var buffer = gpgpu.readData();
+    renderDots(buffer);
+    setTimeout(function () {
+        requestAnimationFrame( loop );
+    }, 1000/30);
+}
+
+loop();

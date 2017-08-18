@@ -4,13 +4,20 @@ function GPGPU(size) {
     // The size must be a power of 2 and the textures must be square
     var width  = Math.sqrt(size / 4);
     var height = width;
-    var _scale = 0.0001;
 
     // textures for input and output data
     var dataTexture   = null;
-    var outputTexture = null;
+
+    // We need 2 output textures to swap buffers
+    var outputTexture1 = null;
+    var outputTexture2 = null;
+    var outputTextures = [];
     // framebuffer to render in
     var frameBuffer = null;
+    var dataTextureHandle1;
+    var dataTextureHandle2;
+
+    var tick = 0;
 
     // create canvas, but don’t attach it to an element
     var canvas = document.createElement('canvas');
@@ -30,6 +37,7 @@ function GPGPU(size) {
     // using the <link rel="import"> method to store shader
     var vs_source = document.getElementById("vertex-shader").import.body.textContent;
     var fs_source = document.getElementById("fragment-shader").import.body.textContent;
+    var fs_source2 = document.getElementById("fragment-shader2").import.body.textContent;
 
     // compile vertex shader
     var vertexShader = gl.createShader(gl.VERTEX_SHADER);
@@ -43,14 +51,30 @@ function GPGPU(size) {
     gl.compileShader(fragmentShader);
     success = gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS);
 
-    // Create program object
-    var program = gl.createProgram();
+    // compile render fragment shader
+    var fragmentShader2 = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fragmentShader2, fs_source2);
+    gl.compileShader(fragmentShader2);
+    success = gl.getShaderParameter(fragmentShader2, gl.COMPILE_STATUS);
+
+    // Create program object for GPGPU
+    var program1 = gl.createProgram();
     // attach compiled shaders
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
+    gl.attachShader(program1, vertexShader);
+    gl.attachShader(program1, fragmentShader);
     // link the program
-    gl.linkProgram(program);
-    success = gl.getProgramParameter(program, gl.LINK_STATUS);
+    gl.linkProgram(program1);
+    success = gl.getProgramParameter(program1, gl.LINK_STATUS);
+
+    // Create program object for rendering
+    var program2 = gl.createProgram();
+    gl.attachShader(program2, vertexShader);
+    gl.attachShader(program2, fragmentShader2);
+    // link the program
+    gl.linkProgram(program2);
+    success = gl.getProgramParameter(program2, gl.LINK_STATUS);
+
+    // We use the same geometry for compute and render
 
     // Geometry of the model: a simple square covering the full viewport range [-1, 1]
     // with texture coordinates covering the full texture range [0, 1]
@@ -63,30 +87,32 @@ function GPGPU(size) {
         ]
     );
 
+    // create an outputTexture to hold results: same code as previous page, with null as data
+    outputTexture1 = createTexture(null);
+    outputTexture2 = createTexture(null);
+    // this also unbinds TEXTURE0, which will hold the input Data
+
+    outputTextures = [outputTexture1, outputTexture2];
+
     // Store this data into a gl buffer
     var vertexBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, geometry, gl.STATIC_DRAW);
 
-    gl.useProgram(program);
+    gl.useProgram(program1);
     // Get handles on our variables and uniforms:
     // this makes the link between the CPU and GPU variables
 
     // position handle will point to the X,Y,Z coordinates called ‘position’ in the shader
-    var positionAttributeHandle = gl.getAttribLocation(program, "position");
+    var positionAttributeHandle = gl.getAttribLocation(program1, "position");
 
     // texture handle will point to the s,t texture coordinates data called ‘textureCoord’
-    var textureAttributeHandle = gl.getAttribLocation(program, "textureCoord");
+    var textureAttributeHandle = gl.getAttribLocation(program1, "textureCoord");
 
     gl.enableVertexAttribArray(positionAttributeHandle);
     gl.enableVertexAttribArray(textureAttributeHandle);
 
-
-    // set handles for other params
-    var widthHandle = gl.getUniformLocation(program, "width");
-    var heightHandle = gl.getUniformLocation(program, "height");
-    var scaleHandle = gl.getUniformLocation(program, "scale");
-
+    var tickHandle = gl.getUniformLocation(program1, "tick");
 
     // Tell the attribute how to get data out of the geometry buffer (ARRAY_BUFFER)
     gl.vertexAttribPointer(positionAttributeHandle,
@@ -105,17 +131,37 @@ function GPGPU(size) {
         3 * 4  // offset start at byte 12 for texture positions, after X,Y,Z coords
     );
 
-    // set viewport to cover our problem space
-    gl.viewport(0, 0, width, height);
 
-    // Not rendering to a texture this time, so no buffer here
-    //// create an outputTexture to hold results: same code as previous page, with null as data
-    //outputTexture = createTexture(null);
-    //// this also unbinds TEXTURE0, which will hold the input Data
-    //
-    //// Attach the texture to frameBuffer
-    //attachFrameBuffer(outputTexture);
-    var status = frameBufferIsComplete();
+    gl.useProgram(program2);
+
+    // position handle will point to the X,Y,Z coordinates called ‘position’ in the shader
+    var positionAttributeHandle2 = gl.getAttribLocation(program2, "position");
+
+    // texture handle will point to the s,t texture coordinates data called ‘textureCoord’
+    //var textureAttributeHandle2 = gl.getAttribLocation(program2, "textureCoord");
+    dataTextureHandle2 = gl.getUniformLocation(program2, "data");
+
+    gl.enableVertexAttribArray(positionAttributeHandle2);
+    //gl.enableVertexAttribArray(textureAttributeHandle);
+
+    //var tickHandle = gl.getUniformLocation(program1, "tick");
+
+    // Tell the attribute how to get data out of the geometry buffer (ARRAY_BUFFER)
+    gl.vertexAttribPointer(positionAttributeHandle2,
+        3, // x,y,z vertex coords = 3 FLOATs
+        gl.FLOAT, // type
+        gl.FALSE, // do not normalize
+        5 * 4, // stride (each element of the geometry is 5 floats of 4 bytes)
+        0 // offset start at 0 for vertex positions
+    );
+
+    //gl.vertexAttribPointer(textureAttributeHandle,
+    //    2, // s,t textures coordinates = 2 FLOATs
+    //    gl.FLOAT, // type
+    //    gl.FALSE, // do not normalize
+    //    5 * 4, // stride (each texture coord of the geometry is 5 floats of 4 bytes)
+    //    3 * 4  // offset start at byte 12 for texture positions, after X,Y,Z coords
+    //);
 
 
     function createTexture(data) {
@@ -177,30 +223,48 @@ function GPGPU(size) {
         return {isComplete: value, message: message};
     }
 
-    function scale(scale) {
-        _scale = scale;
-    }
 
     function setData(data) {
         // Create the input data texture
         dataTexture = createTexture(data);
-
+        gl.useProgram(program1);
         // create a handle for the data texture that will be called ‘data’ in the program
-        var dataTextureHandle = gl.getUniformLocation(program, "data");
+        dataTextureHandle1 = gl.getUniformLocation(program1, "data");
         // bind input data texture to GPU TEXTURE0
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, dataTexture);
         // set uniform data texture handle to point to TEXTURE0
-        gl.uniform1i(dataTextureHandle, 0);
+        gl.uniform1i(dataTextureHandle1, 0);
+
 
     }
 
     function compute() {
 
+
+        // Compute data positions
+        gl.useProgram(program1);
+        // set viewport to cover our problem space
+        gl.viewport(0, 0, width, height);
+
+        if (tick > 0) {
+            //dataTextureHandle1 = gl.getUniformLocation(program1, "data");
+            // bind input data texture to GPU TEXTURE0
+            //gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, outputTextures[tick % 2]);
+            // set uniform data texture handle to point to TEXTURE0
+            gl.uniform1i(dataTextureHandle1, 0);
+        }
+
+        // Attach the texture to frameBuffer, swapping at each tick
+        tick++;
+        gl.uniform1f(tickHandle, tick);
+        attachFrameBuffer(outputTextures[tick % 2]);
         var status = frameBufferIsComplete();
+
         // Run the calculation, that is, render the square
         if (status.isComplete) {
-            // draw the ‘square’ model
+             //draw the ‘square’ model
             gl.drawArrays(
                 gl.TRIANGLE_STRIP, //primitive type
                 0, //offset in ARRAY_BUFFER where we have the data
@@ -208,21 +272,38 @@ function GPGPU(size) {
             );
         }
         else {
-            console.log(status.message);
+          console.log(status.message);
         }
-    }
 
-    function loop() {
 
-        // set uniforms for all force laoyout parameters
-        gl.uniform1f(widthHandle, width); //0.5
-        gl.uniform1f(heightHandle, height); //0.1
-        gl.uniform1f(scaleHandle, _scale); //0.005
+        // render
 
-        compute();
-        setTimeout(function() {
-            requestAnimationFrame( loop );
-        }, 1000 / 30 );
+        gl.useProgram(program2);
+        // set viewport to cover our viewport / canvas space
+        gl.viewport(0, 0, 512, 512);
+        // bind to null (canvas) for render
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        // bind calculated data texture to GPU TEXTURE0 for use in the render phase
+        //gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, outputTextures[tick % 2]);
+        // set uniform data texture handle to point to TEXTURE0
+        gl.uniform1i(dataTextureHandle2, 0);
+
+        status = frameBufferIsComplete();
+        // Run the calculation, that is, render the square
+        if (status.isComplete) {
+             //draw the ‘square’ model
+            gl.drawArrays(
+                gl.TRIANGLE_STRIP, //primitive type
+                0, //offset in ARRAY_BUFFER where we have the data
+                4 //count (4 points to build 2 triangles)
+            );
+        }
+        else {
+          console.log(status.message);
+        }
+
     }
 
     function attachFrameBuffer(texture) {
@@ -241,28 +322,27 @@ function GPGPU(size) {
         return frameBuffer;
     }
 
-    function attachCanvas(element_id) {
+    function attachCanvas(element_id, width, height) {
         document.getElementById(element_id).appendChild(canvas);
         canvas.setAttribute("width", width);
         canvas.setAttribute("height", height);
         // hook scroll to scale
-        canvas.onmousewheel = function onScroll(e) {
-            e.stopPropagation();
-            e.preventDefault();
-            _scale = Math.max(0.0001, _scale += e.deltaY / 1000);
-            console.log(_scale);
-        };
+        //canvas.onmousewheel = function onScroll(e) {
+        //    e.stopPropagation();
+        //    e.preventDefault();
+        //    _scale = Math.max(0.0001, _scale += e.deltaY / 1000);
+        //    console.log(_scale);
+        //};
     }
 
     // Get the output data
     function readData() {
-        console.log("read buffer");
         // Create an output buffer object to store read data
         var buffer = new Float32Array(4 * width * height);
 
         // bind the outputTexture to TEXTURE0
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, outputTexture);
+        gl.bindTexture(gl.TEXTURE_2D, outputTextures[tick % 2]);
 
         // Read texture data into the buffer
         gl.readPixels(
@@ -281,24 +361,39 @@ function GPGPU(size) {
         setData: setData,
         compute: compute,
         readData: readData,
-        loop: loop,
-        attachCanvas: attachCanvas
+        attachCanvas: attachCanvas,
     }
 }
 
 
-var timeDiff = {
-    ms: function(t1, t2) {
-        return t2 - t1 + "ms";
-    }
-};
+var nb_dots_x = 64;
+var nb_dots_y = nb_dots_x;
+var size = nb_dots_x * nb_dots_y * 4;
 
-var nb_loops = 200000;
+var inputData = new Float32Array(size);
+for (var i = 0; i < nb_dots_x; i++) {
+  for (var j = 0; j < nb_dots_y; j++) {
+    inputData[4 * (i * nb_dots_y + j) + 0] = (i - (nb_dots_x / 2)) / nb_dots_x ;   // R value = X coord
+    inputData[4 * (i * nb_dots_y + j) + 1] = (j - (nb_dots_y / 2)) / nb_dots_y;   // G value = Y coord
+    inputData[4 * (i * nb_dots_y + j) + 2] = 0.0;   // B value = nothing
+    inputData[4 * (i * nb_dots_y + j) + 3] = 0.0;   // A value = nothing
+  }
+}
 
-// 4096 for size gives us a texture that is 32 x 32 (with 4 floats per point)
-// 67,108,864 is 4096 x 4096 x 4
-var size = 800 * 800 * 4;
+var width = 512;
+var height = 512;
 
 var gpgpu = new GPGPU(size);
-var canvas = gpgpu.attachCanvas("gl-canvas");
-gpgpu.loop();
+
+gpgpu.setData(inputData);
+// attach the canvas we'll use to render the output
+gpgpu.attachCanvas("gl-canvas", width, height);
+
+function loop() {
+    gpgpu.compute();
+    setTimeout( function () {
+        requestAnimationFrame( loop );
+    }, 1000 / 30 );
+}
+
+loop();

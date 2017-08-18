@@ -16,7 +16,7 @@ vec4 mandelbrot(vec2 vTextureCoord)
     float n = 0.;
     // the 1st vector is the center of the zoom: defined to zoom nicely into more structures
     // then it's XY coords on the texture, offset to center the graph, and scaled
-    vec2 c = vec2(-.745,.186) + 3. * (vTextureCoord - 0.5)*pow(.01,0.1+scale),
+    vec2 c = vec2(-.745,.186) + 3. * (vTextureCoord - 0.5)*pow(.2,0.1+scale),
          z = c*n;
     
     for( int i=0; i<200; i++ )  // iterate to find the divergence
