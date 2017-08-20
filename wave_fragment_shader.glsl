@@ -8,7 +8,6 @@ uniform sampler2D data;          // handler on the data texture
 varying vec2 vTextureCoord;      // textures coordinates transferred from vertex shader
 uniform float tick;
 
-// compute simple 2x for each data point
 vec2 computeElement(vec2 texCoords)
 {
     vec4 values = texture2D(data, texCoords.st); // lookup value in texture
