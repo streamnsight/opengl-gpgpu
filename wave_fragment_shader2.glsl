@@ -7,8 +7,8 @@ precision mediump float;
 uniform sampler2D data;          // handler on the data texture
 
 // hard coded values for nb of points. We can also pass this as uniforms
-const float width = 64.0;
-const float height = 64.0;
+const float width = 256.0;
+const float height = 256.0;
 const float radius = 1.0 / 512.0;
 const float blur = 1.0 / 512.0;
 

@@ -25,7 +25,7 @@ function GPGPU(size) {
     var canvas = document.createElement('canvas');
 
     // default attributes: don’t use alpha (transparency), depth, or smoothing
-    var attributes = {alpha: false, depth: false, antialias: false};
+    var attributes = {alpha: true, depth: false, antialias: false};
 
     // get GL context
     var gl = canvas.getContext("webgl", attributes) || canvas.getContext('experimental-webgl', attributes);
@@ -427,7 +427,7 @@ function GPGPU(size) {
 }
 
 
-var nb_dots_x = 64;
+var nb_dots_x = 1024;
 var nb_dots_y = nb_dots_x;
 var size = nb_dots_x * nb_dots_y * 4;
 

@@ -43,11 +43,11 @@ There are 3 versions of this example:
 
 - One version that shows the GPU compute with iterations, outputs the data in a buffer (like times2) and renders with `canvas`
 
-- The second one uses the GPU to render the dots, creating a new vertexBuffer with the computed data, using a second shader program to render the dots.
+- The second one uses the GPU to render the dots, creating a new vertexBuffer with the computed data, using a second shader program to render the dots. (65k dots)
 
 - The third version takes advantage of vertex texture to simulate a geometry shader, and read point coordinates from the texture,
 avoiding the readPixel call that transfers data to and from the CPU and is costly. In that version, vertex indices are encoded in the vertexBuffer, instead of XYZ coordinates
-and used to look up the coordinates in the texture; This is necessary because the gl_VertexID input is not available in WebGL.
+and used to look up the coordinates in the texture; This is necessary because the gl_VertexID input is not available in WebGL. (1M dots)
 
 
 ## Mandelbrot set.

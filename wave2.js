@@ -421,7 +421,7 @@ function GPGPU(size) {
 }
 
 
-var nb_dots_x = 64;
+var nb_dots_x = 256;
 var nb_dots_y = nb_dots_x;
 var size = nb_dots_x * nb_dots_y * 4;
 
