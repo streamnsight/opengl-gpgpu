@@ -74,6 +74,8 @@ function GPGPU(size) {
     gl.compileShader(vertexShader2);
     var success = gl.getShaderParameter(vertexShader2, gl.COMPILE_STATUS);
 
+    console.log(gl.getShaderInfoLog(vertexShader2));
+
     // compile render fragment shader
     var fragmentShader2 = gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fragmentShader2, fs_source2);
@@ -126,6 +128,7 @@ function GPGPU(size) {
     gl.enableVertexAttribArray(positionAttributeHandle);
     gl.enableVertexAttribArray(textureAttributeHandle);
 
+    dataTextureHandle1 = gl.getUniformLocation(program1, "data");
 
     // Tell the attribute how to get data out of the geometry buffer (ARRAY_BUFFER)
     gl.vertexAttribPointer(positionAttributeHandle,
@@ -169,6 +172,11 @@ function GPGPU(size) {
     dataTextureHandle2 = gl.getUniformLocation(program2, "data");
 
     var vertexBuffer2 = gl.createBuffer();
+    var pointGeometry = new Float32Array(width * height * 4);
+    // this buffer only contains vertices indexes to look up coords in the texture.
+    for (var i = 0; i < width * height; i++) {
+        pointGeometry[4 * i] = i;
+    }
 
     function createTexture(data) {
         var texture = gl.createTexture();
@@ -254,7 +262,6 @@ function GPGPU(size) {
 
         // first pass we want our input data in
         if (tick > 0) {
-            dataTextureHandle1 = gl.getUniformLocation(program1, "data");
             // bind input data texture to GPU TEXTURE0
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, outputTextures[tick % 2]);
@@ -314,13 +321,6 @@ function GPGPU(size) {
           console.log(status.message);
         }
 
-        // Not the most efficient way to proceed here, but does the job.
-        // We need to actually read the data buffer to make it a vertexBuffer
-        // In ES2.0, geometry shaders and vertex textures are supported, which can be used to do this without
-        // the extra back-and-forth read/write step here, but in WebGL 1.0, only Open GL ES 1.x is supported,
-        // and we don't have that luxury.
-        var buffer = readData();
-
         // render
         gl.useProgram(program2);
         // set viewport to cover our viewport / canvas space (here 512 x 512)
@@ -328,10 +328,16 @@ function GPGPU(size) {
         // bind to null (meaning the canvas) for render
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
+        // bind output data texture to GPU TEXTURE0
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, outputTextures[tick % 2]);
+        // set uniform data texture handle to point to TEXTURE0
+        gl.uniform1i(dataTextureHandle2, 0);
+
         // had the read the data into a buffer to assign it to the ARRAY_BUFFER vertex buffer
         // bind computed point position buffer to the vertex buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer2);
-        gl.bufferData(gl.ARRAY_BUFFER, buffer, gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, pointGeometry, gl.STATIC_DRAW);
 
         // enable position pointer for program2
         gl.enableVertexAttribArray(positionAttributeHandle2);
@@ -348,7 +354,7 @@ function GPGPU(size) {
         status = frameBufferIsComplete();
         // Run the calculation, that is, render the square
         if (status.isComplete) {
-            gl.clearColor(1.0, 1.0, 1.0, 1.0);
+            gl.clearColor(0.9, 0.9, 0.9, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
             gl.drawArrays(
                 gl.POINTS, //primitive type
