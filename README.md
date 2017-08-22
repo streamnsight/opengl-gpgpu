@@ -2,7 +2,10 @@
 
 Code for the presentation at the Santa Cruz Javascript Meetup (2017-08-24)
 
-These are a few example of GPU computing:
+https://docs.google.com/presentation/d/1K6f0GqU19v55SH0guo1-6TxCUvA3GUkemsMNSd123qI/edit?usp=sharing
+
+
+These are a few examples of GPU computing:
 
 - Simple math operations: time2 multiplies every element of a matrix by 2, compares to CPU and look at performance.
 Try it with various mathematical operations to see when GPU shines.
